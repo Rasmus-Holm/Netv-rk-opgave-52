@@ -1,0 +1,116 @@
+## Last commit: 2026-10-06 09:51:18 UTC by root
+version 12.1X46-D30.2;
+system {
+    host-name R5;
+    /* User: root Password: Rootpass */
+    root-authentication {
+        encrypted-password "$1$xH9xJoL6$MFOUYnZr4.Qj2NM24XInz/"; ## SECRET-DATA
+    }
+}
+interfaces {
+    ge-0/0/2 {
+        unit 0 {
+            family inet {
+                address 10.10.12.2/30;
+            }
+        }
+    }
+    ge-0/0/3 {
+        unit 0 {
+            family inet {
+                address 10.10.11.1/30;
+            }
+        }
+    }
+    ge-0/0/4 {
+        unit 0 {
+            family inet {
+                /* USERLAN3 */
+                address 192.168.15.1/24;
+            }
+        }
+    }
+    lo0 {
+        unit 0 {
+            family inet {
+                address 192.168.100.3/32;
+            }
+        }
+    }
+}
+protocols {
+    ospf {
+        area 0.0.0.0 {
+            interface lo0.0;
+            interface ge-0/0/2.0 {
+                interface-type p2p;
+            }
+            interface ge-0/0/3.0 {
+                interface-type p2p;
+            }
+            interface ge-0/0/4.0 {
+                passive;
+            }
+            interface ge-0/0/1.0 {
+                interface-type p2p;
+            }
+        }
+    }
+}
+security {
+    policies {
+        from-zone trust to-zone trust {
+            policy default-permit {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+    }
+    zones {
+        security-zone trust {
+            interfaces {
+                lo0.0 {
+                    host-inbound-traffic {
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/2.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/3.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/4.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
