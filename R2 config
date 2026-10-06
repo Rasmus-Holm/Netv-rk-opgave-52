@@ -1,0 +1,391 @@
+## Last commit: 2026-10-06 12:57:10 CEST by root
+version 12.1X46-D55.3;
+system {
+    host-name R2;
+    time-zone Europe/Berlin;
+    /* User: root Password: Rootpass */
+    root-authentication {
+        encrypted-password "$1$xH9xJoL6$MFOUYnZr4.Qj2NM24XInz/"; ## SECRET-DATA
+    }
+    login {
+        user per {
+            uid 2020;
+            class super-user;
+            /* User: per Password: Perpass */
+            authentication {
+                encrypted-password "$1$MqEo7eB1$baEcWYIkqTKrfVKWgRUqZ0"; ## SECRET-DATA
+            }
+        }
+    }
+    services {
+        dhcp-local-server {
+            group DMZ {
+                interface ge-0/0/3.0;
+            }
+            group USERLAN1 {
+                interface ge-0/0/4.0;
+            }
+        }
+    }
+}
+interfaces {
+    ge-0/0/1 {
+        unit 0 {
+            family inet {
+                /* Lan10 */
+                address 10.10.12.1/30;
+            }
+        }
+    }
+    ge-0/0/2 {
+        unit 0 {
+            family inet {
+                /* Lan5 */
+                address 10.10.10.1/30;
+            }
+        }
+    }
+    ge-0/0/3 {
+        unit 0 {
+            family inet {
+                /* DMZ */
+                address 192.168.12.1/24;
+            }
+        }
+    }
+    ge-0/0/4 {
+        unit 0 {
+            family inet {
+                /* USERLAN1 */
+                address 192.168.13.1/24;
+            }
+        }
+    }
+    ge-0/0/5 {
+        unit 0 {
+            family inet {
+                /* VMnet8 or LabLan NAT Untrust zone */
+                address 10.56.16.80/22;
+            }
+        }
+    }
+    ge-0/0/6 {
+        unit 0 {
+            family inet {
+                /* SERVERLAN */
+                address 192.168.11.1/24;
+            }
+        }
+    }
+    lo0 {
+        unit 0 {
+            family inet {
+                address 192.168.100.1/32;
+            }
+        }
+    }
+}
+routing-options {
+    static {
+        /* Route to internet gateway */
+        route 0.0.0.0/0 next-hop 10.56.16.1;
+    }
+}
+protocols {
+    ospf {
+        export [ my-default-static-route-to-internet my-route-to-SERVERLAN ];
+        area 0.0.0.0 {
+            interface lo0.0;
+            interface ge-0/0/1.0 {
+                interface-type p2p;
+            }
+            interface ge-0/0/2.0;
+            interface ge-0/0/4.0 {
+                passive;
+            }
+        }
+    }
+}
+policy-options {
+    policy-statement my-default-static-route-to-internet {
+        term accpt-my-default-route {
+            from {
+                protocol static;
+                route-filter 0.0.0.0/0 exact;
+            }
+            then accept;
+        }
+    }
+    policy-statement my-route-to-SERVERLAN {
+        term accpt-my-route-to-SERVERLAN {
+            from {
+                route-filter 192.168.11.0/24 exact;
+            }
+            then accept;
+        }
+    }
+}
+security {
+    nat {
+        source {
+            rule-set trust-to-untrust {
+                from zone trust;
+                to zone untrust;
+                rule rule-any-to-any {
+                    match {
+                        source-address 0.0.0.0/0;
+                        destination-address 0.0.0.0/0;
+                    }
+                    then {
+                        source-nat {
+                            /* Use egress interface source address */
+                            interface;
+                        }
+                    }
+                }
+            }
+            rule-set DMZ-to-untrust {
+                from zone DMZ;
+                to zone untrust;
+                rule rule-is-any-to-any {
+                    match {
+                        source-address 0.0.0.0/0;
+                        destination-address 0.0.0.0/0;
+                    }
+                    then {
+                        source-nat {
+                            interface;
+                        }
+                    }
+                }
+            }
+        }
+        destination {
+            pool NginxWebServer {
+                address 192.168.12.55/32;
+            }
+            rule-set DestinationNATRuleWebServer {
+                from zone untrust;
+                rule ruleToWebServer {
+                    match {
+                        destination-address 10.56.16.80/32;
+                        destination-port 80;
+                    }
+                    then {
+                        destination-nat {
+                            pool {
+                                NginxWebServer;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    policies {
+        from-zone untrust to-zone DMZ {
+            policy WebServerPolicy {
+                match {
+                    source-address any;
+                    destination-address WebServer;
+                    application junos-http;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+        from-zone DMZ to-zone untrust {
+            policy outOnTheInternet {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+        from-zone DMZ to-zone trust {
+            policy default-permit {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    deny;
+                }
+            }
+        }
+        from-zone trust to-zone DMZ {
+            policy default-permit {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+        from-zone trust to-zone trust {
+            policy default-permit {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+        from-zone untrust to-zone trust {
+            policy default-deny {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    deny;
+                }
+            }
+        }
+        from-zone trust to-zone untrust {
+            policy internet-access {
+                match {
+                    source-address any;
+                    destination-address any;
+                    application any;
+                }
+                then {
+                    permit;
+                }
+            }
+        }
+    }
+    zones {
+        security-zone DMZ {
+            address-book {
+                address WebServer 192.168.12.55/32;
+            }
+            interfaces {
+                ge-0/0/3.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ssh;
+                            dhcp;
+                            ping;
+                        }
+                    }
+                }
+            }
+        }
+        security-zone trust {
+            interfaces {
+                lo0.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/1.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/2.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ping;
+                        }
+                        protocols {
+                            ospf;
+                        }
+                    }
+                }
+                ge-0/0/4.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            dhcp;
+                        }
+                    }
+                }
+                ge-0/0/6.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            dhcp;
+                        }
+                    }
+                }
+            }
+        }
+        security-zone untrust {
+            interfaces {
+                ge-0/0/5.0 {
+                    host-inbound-traffic {
+                        system-services {
+                            ssh;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+access {
+    /* DHCP parameters to be handed out. */
+    address-assignment {
+        pool DMZ {
+            family inet {
+                network 192.168.12.0/24;
+                range USERS {
+                    low 192.168.12.10;
+                    high 192.168.12.20;
+                }
+                dhcp-attributes {
+                    maximum-lease-time 60;
+                    name-server {
+                        8.8.8.8;
+                    }
+                    router {
+                        192.168.12.1;
+                    }
+                }
+            }
+        }
+        /* DHCP pools */
+        pool USERLAN1 {
+            family inet {
+                network 192.168.13.0/24;
+                range USERS {
+                    low 192.168.13.10;
+                    high 192.168.13.20;
+                }
+                dhcp-attributes {
+                    maximum-lease-time 3600;
+                    name-server {
+                        8.8.8.8;
+                    }
+                    router {
+                        192.168.13.1;
+                    }
+                }
+            }
+        }
+    }
+}
+
